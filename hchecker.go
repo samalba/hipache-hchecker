@@ -275,7 +275,11 @@ func listenToRedis() {
                 check.backendUrl = parts[1]
                 check.backendId, _ = strconv.Atoi(parts[2])
                 check.backendLength, _ = strconv.Atoi(parts[3])
-                addCheck(check)
+                if check.backendLength > 1 {
+                    // Add the check only if the frontend is scaled to several
+                    // backends
+                    addCheck(check)
+                }
             case error:
                 log.Printf("Error: cannot subscribe on the \"dead\" " +
                     "channel: %#v\n", v)
