@@ -3,6 +3,7 @@ package main
 
 import (
     "fmt"
+    "time"
     "sync"
     "errors"
     "encoding/json"
@@ -16,6 +17,8 @@ const (
 type Cache struct {
     redisConn redis.Conn
     redisMutex sync.Mutex
+    // Unique sig for the check's goroutine
+    routineSig string
 }
 
 func NewCache() (*Cache, error) {
@@ -83,6 +86,16 @@ func (c *Cache) LockBackend(check *Check) (bool) {
         // The backend is being monitored by someone else
         return false
     }
+    if locked == true {
+        // we got the lock, let's create a unique sig for the goroutine
+        c.redisMutex.Lock()
+        t := time.Now()
+        // This one is done in the lock, this will garanty that no routine
+        // will get the same sig
+        c.routineSig = fmt.Sprintf("%s:%d.%d", myId, t.Unix(), t.Nanosecond())
+        c.redisConn.Do("HSET", REDIS_KEY, check.BackendUrl, c.routineSig)
+        c.redisMutex.Unlock()
+    }
     // Let's update the mapping in case this is a new frontend
     c.updateFrontendMapping(check, metaKey, metaData)
     return locked
@@ -90,11 +103,11 @@ func (c *Cache) LockBackend(check *Check) (bool) {
 
 func (c *Cache) IsUnlockedBackend(check *Check) (bool) {
     c.redisMutex.Lock()
-    // FIXME: Get the content of the lock and compare with the goroutine sig
-    reply, _ := redis.Bool(c.redisConn.Do("HEXISTS", REDIS_KEY,
-        check.BackendUrl))
+    // On top of checking the lock, we compare the lock content to make sure
+    // we still own the lock
+    reply, _ := redis.String(c.redisConn.Do("HGET", REDIS_KEY, check.BackendUrl))
     c.redisMutex.Unlock()
-    return !reply
+    return (reply != c.routineSig)
 }
 
 func (c *Cache) UnlockBackend(check *Check) {

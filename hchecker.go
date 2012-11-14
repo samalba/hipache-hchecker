@@ -6,6 +6,7 @@ import (
         "fmt"
         "log"
         "time"
+        "flag"
         "runtime"
         )
 
@@ -63,11 +64,30 @@ func printStats() {
     }()
 }
 
+func parseFlags() {
+    parseDuration := func (v *time.Duration, n string, def int, help string) {
+        i := flag.Int(n, def, help)
+        *v = time.Duration(*i) * time.Second
+    }
+    flag.StringVar(&httpMethod, "method", HTTP_METHOD,
+        "HTTP method")
+    parseDuration(&checkInterval, "interval", CHECK_INTERVAL,
+        "Check interval (seconds)")
+    parseDuration(&connectionTimeout, "connect", CONNECTION_TIMEOUT,
+        "TCP connection timeout (seconds)")
+    parseDuration(&ioTimeout, "io", IO_TIMEOUT,
+        "HTTP read/write timeout (seconds)")
+    flag.StringVar(&userAgent, "agent", USER_AGENT,
+        "HTTP User-Agent header")
+    flag.Parse()
+}
+
 func main() {
     var (
         err error
         hostname string
         )
+    parseFlags()
     runtime.GOMAXPROCS(runtime.NumCPU())
     hostname, _ = os.Hostname()
     myId = fmt.Sprintf("%s#%d", hostname, os.Getpid())

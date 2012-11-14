@@ -16,19 +16,25 @@ const (
     // The HTTP method used for each test
     HTTP_METHOD = "HEAD"
     // Check the URL every 3 seconds
-    CHECK_INTERVAL = time.Duration(3) * time.Second
-    // Check every 5 minutes if we break the check
-    CHECK_BREAK_INTERVAL = time.Duration(5) * time.Minute
+    CHECK_INTERVAL = 3
+    // Check every 1 minute if we break the check
+    CHECK_BREAK_INTERVAL = 60
     // Connection timeout is 3 seconds by default
-    CONNECTION_TIMEOUT = time.Duration(3) * time.Second
+    CONNECTION_TIMEOUT = 3
     // IO timeout applies after the connection
-    IO_TIMEOUT = time.Duration(3) * time.Second
+    IO_TIMEOUT = 3
     // User-Agent for all tests
     USER_AGENT = "dotCloud-HealthCheck/1.0 go/1.0.3"
 )
 
 var (
     httpClient *http.Client
+    httpMethod string
+    checkInterval time.Duration
+    checkBreakInterval time.Duration
+    connectionTimeout time.Duration
+    ioTimeout time.Duration
+    userAgent string
 )
 
 type Check struct {
@@ -63,11 +69,11 @@ func NewCheck(line string) (*Check, error) {
 
 func createHttpTransport() (*http.Transport) {
     httpDial := func (proto string, addr string) (net.Conn, error) {
-        conn, err := net.DialTimeout(proto, addr, CONNECTION_TIMEOUT)
+        conn, err := net.DialTimeout(proto, addr, connectionTimeout)
         if err != nil {
             return nil, err
         }
-        conn.SetDeadline(time.Now().Add(IO_TIMEOUT))
+        conn.SetDeadline(time.Now().Add(ioTimeout))
         return conn, nil
     }
     return &http.Transport{
@@ -104,11 +110,9 @@ func (c* Check) PingUrl() {
     if httpClient == nil {
         httpClient = &http.Client{Transport: createHttpTransport()}
     }
-    // FIXME: set the lock value with a generated-unique goroutine signature
-    // HSET REDIS_KEY check.backendUrl "my_unique_routine_sig"
     for {
-        req, _ := http.NewRequest(HTTP_METHOD, c.BackendUrl, nil)
-        req.Header.Add("User-Agent", USER_AGENT)
+        req, _ := http.NewRequest(httpMethod, c.BackendUrl, nil)
+        req.Header.Add("User-Agent", userAgent)
         resp, err := httpClient.Do(req)
         if err != nil {
             // TCP error
@@ -146,13 +150,10 @@ func (c* Check) PingUrl() {
                 }
         }
         status = newStatus
-        time.Sleep(CHECK_INTERVAL)
-        i += CHECK_INTERVAL
+        time.Sleep(checkInterval)
+        i += checkInterval
         // At longer interval, we check if still have the lock on the backend
-        if i >= CHECK_BREAK_INTERVAL {
-            // FIXME: when checking the lock, compare with my unique goroutine
-            // signature, so we'll make sure this routine still have the lock
-            // and not just the process
+        if i >= checkBreakInterval {
             if c.checkIfBreakCallback() == true {
                 break
             }
