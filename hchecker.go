@@ -76,9 +76,11 @@ func parseFlags() {
     parseDuration(&connectionTimeout, "connect", CONNECTION_TIMEOUT,
         "TCP connection timeout (seconds)")
     parseDuration(&ioTimeout, "io", IO_TIMEOUT,
-        "HTTP read/write timeout (seconds)")
+        "Socket read/write timeout (seconds)")
     flag.StringVar(&userAgent, "agent", USER_AGENT,
         "HTTP User-Agent header")
+    flag.StringVar(&redisAddress, "redis", REDIS_ADDRESS,
+        "Network address of Redis")
     flag.Parse()
 }
 

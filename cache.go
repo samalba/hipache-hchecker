@@ -12,6 +12,11 @@ import (
 
 const (
     REDIS_KEY = "hchecker"
+    REDIS_ADDRESS = ":6379"
+)
+
+var (
+    redisAddress string
 )
 
 type Cache struct {
@@ -22,7 +27,7 @@ type Cache struct {
 }
 
 func NewCache() (*Cache, error) {
-    redisConn, err := redis.Dial("tcp", ":6379")
+    redisConn, err := redis.Dial("tcp", redisAddress)
     if err != nil {
         return nil, errors.New(fmt.Sprintf("Cannot connect to Redis (%s)",
             err.Error()))
@@ -163,7 +168,7 @@ func (c *Cache) ListenToChannel(channel string, callback func (line string)) err
     // -> frontend_key;backend_url;backend_id;number_of_backends
     // Example: "localhost;http://localhost:4242;0;1"
     // Create a new connection to the Redis for the SUBSCRIBE
-    conn, _ := redis.Dial("tcp", ":6379")
+    conn, _ := redis.Dial("tcp", redisAddress)
     defer conn.Close()
     psc := redis.PubSubConn{conn}
     psc.Subscribe(channel)
