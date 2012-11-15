@@ -126,6 +126,8 @@ func (c* Check) PingUrl() {
                     newStatus = false
                     testError = fmt.Sprintf("HTTP error on %s: %#v",
                         c.BackendUrl, resp.StatusCode)
+                } else {
+                    newStatus = true
                 }
         }
         // Check if the status changed before updating Redis
