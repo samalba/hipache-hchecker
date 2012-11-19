@@ -47,6 +47,7 @@ func addCheck(line string) {
         // Backend already locked
         return
     }
+    // Check the URL at a regular interval
     go check.PingUrl()
     runningCheckers += 1
     log.Printf("Added check for: %s\n", check.BackendUrl)

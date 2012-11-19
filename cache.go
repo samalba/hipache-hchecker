@@ -22,8 +22,6 @@ var (
 type Cache struct {
     redisConn redis.Conn
     redisMutex sync.Mutex
-    // Unique sig for the check's goroutine
-    routineSig string
 }
 
 func NewCache() (*Cache, error) {
@@ -76,7 +74,7 @@ func (c *Cache) updateFrontendMapping(check *Check, metaKey string, metaData str
  * Lock a backend in Redis by its URL
  */
 func (c *Cache) LockBackend(check *Check) (bool) {
-    metaKey := check.BackendUrl + ":" + myId
+    metaKey := check.BackendUrl + ";" + myId
     c.redisMutex.Lock()
     c.redisConn.Send("MULTI")
     // Lock the backend with a temporary value, we'll update this with the
@@ -97,8 +95,9 @@ func (c *Cache) LockBackend(check *Check) (bool) {
         t := time.Now()
         // This one is done in the lock, this will garanty that no routine
         // will get the same sig
-        c.routineSig = fmt.Sprintf("%s:%d.%d", myId, t.Unix(), t.Nanosecond())
-        c.redisConn.Do("HSET", REDIS_KEY, check.BackendUrl, c.routineSig)
+        sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
+        c.redisConn.Do("HSET", REDIS_KEY, check.BackendUrl, sig)
+        check.MetaDataStore["routineSig"] = sig
         c.redisMutex.Unlock()
     }
     // Let's update the mapping in case this is a new frontend
@@ -112,7 +111,7 @@ func (c *Cache) IsUnlockedBackend(check *Check) (bool) {
     // we still own the lock
     reply, _ := redis.String(c.redisConn.Do("HGET", REDIS_KEY, check.BackendUrl))
     c.redisMutex.Unlock()
-    return (reply != c.routineSig)
+    return (reply != check.MetaDataStore["routineSig"])
 }
 
 func (c *Cache) UnlockBackend(check *Check) {
@@ -124,7 +123,7 @@ func (c *Cache) UnlockBackend(check *Check) {
 
 func (c *Cache) getBackendMetaData(check *Check) map[string][]int {
     var m map[string][]int
-    metaKey := check.BackendUrl + ":" + myId
+    metaKey := check.BackendUrl + ";" + myId
     c.redisMutex.Lock()
     metaData, _ := redis.String(c.redisConn.Do("HGET", REDIS_KEY, metaKey))
     c.redisMutex.Unlock()

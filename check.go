@@ -31,7 +31,7 @@ var (
     httpClient *http.Client
     httpMethod string
     checkInterval time.Duration
-    checkBreakInterval time.Duration
+    checkBreakInterval = time.Duration(CHECK_BREAK_INTERVAL) * time.Second
     connectionTimeout time.Duration
     ioTimeout time.Duration
     userAgent string
@@ -42,6 +42,9 @@ type Check struct {
     BackendId int
     BackendGroupLength int
     FrontendKey string
+
+    // Map string used to store meta-data related to the check
+    MetaDataStore map[string]string
 
     // Called when backend dies
     deadCallback func ()
@@ -60,10 +63,9 @@ func NewCheck(line string) (*Check, error) {
     }
     backendId, _ := strconv.Atoi(parts[2])
     backendGroupLength, _ := strconv.Atoi(parts[3])
-    emptyFunc := func () {}
-    emptyFuncFalse := func () bool { return false }
-    c := &Check{parts[1], backendId, backendGroupLength, parts[0],
-        emptyFunc, emptyFunc, emptyFuncFalse, emptyFunc}
+    c := &Check{BackendUrl: parts[1], BackendId: backendId,
+        BackendGroupLength: backendGroupLength, FrontendKey: parts[0]}
+    c.MetaDataStore = make(map[string]string)
     return c, nil
 }
 
@@ -134,11 +136,15 @@ func (c* Check) PingUrl() {
         if newStatus != status {
             if newStatus == true {
                 log.Printf("%s is back online\n", c.BackendUrl)
-                c.aliveCallback()
+                if c.aliveCallback != nil {
+                    c.aliveCallback()
+                }
                 lastDeadCall = time.Time{}
             } else {
                 log.Println(testError)
-                c.deadCallback()
+                if c.deadCallback != nil {
+                    c.deadCallback()
+                }
                 lastDeadCall = time.Now()
             }
         } else if newStatus == false {
@@ -147,7 +153,9 @@ func (c* Check) PingUrl() {
             if lastDeadCall.IsZero() == false &&
                 time.Since(lastDeadCall) >=
                 (time.Duration(30) * time.Second) {
-                    c.deadCallback()
+                    if c.deadCallback != nil {
+                        c.deadCallback()
+                    }
                     lastDeadCall = time.Now()
                 }
         }
@@ -156,11 +164,15 @@ func (c* Check) PingUrl() {
         i += checkInterval
         // At longer interval, we check if still have the lock on the backend
         if i >= checkBreakInterval {
-            if c.checkIfBreakCallback() == true {
-                break
+            if c.checkIfBreakCallback != nil &&
+                c.checkIfBreakCallback() == true {
+                    log.Printf("Lost the lock for %s\n", c.BackendUrl)
+                    break
             }
             i = time.Duration(0)
         }
     }
-    c.exitCallback()
+    if c.exitCallback != nil {
+        c.exitCallback()
+    }
 }
