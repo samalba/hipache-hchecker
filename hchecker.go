@@ -10,6 +10,8 @@ import (
         "runtime"
         )
 
+const VERSION = "0.1.1"
+
 var (
     myId string
     cache *Cache
@@ -90,6 +92,13 @@ func main() {
         err error
         hostname string
         )
+    for  _, arg := range os.Args {
+        if !(arg == "-v" || arg == "--version" || arg == "-version") {
+            continue
+        }
+        fmt.Println("hchecker version", VERSION)
+        os.Exit(0)
+    }
     parseFlags()
     runtime.GOMAXPROCS(runtime.NumCPU())
     hostname, _ = os.Hostname()
