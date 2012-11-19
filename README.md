@@ -26,5 +26,6 @@ on the same machine than Hipache.
       -agent="dotCloud-HealthCheck/1.0 go/1.0.3": HTTP User-Agent header
       -connect=3: TCP connection timeout (seconds)
       -interval=3: Check interval (seconds)
-      -io=3: HTTP read/write timeout (seconds)
+      -io=3: Socket read/write timeout (seconds)
       -method="HEAD": HTTP method
+      -redis=":6379": Network address of Redis
