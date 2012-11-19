@@ -17,6 +17,8 @@ const (
     HTTP_METHOD = "HEAD"
     // Check the URL every 3 seconds
     CHECK_INTERVAL = 3
+    // If the test keeps the same state for 1 week, stop it
+    CHECK_DURATION = 604800
     // Check every 1 minute if we break the check
     CHECK_BREAK_INTERVAL = 60
     // Connection timeout is 3 seconds by default
@@ -31,6 +33,7 @@ var (
     httpClient *http.Client
     httpMethod string
     checkInterval time.Duration
+    checkDuration = time.Duration(CHECK_DURATION) * time.Second
     checkBreakInterval = time.Duration(CHECK_BREAK_INTERVAL) * time.Second
     connectionTimeout time.Duration
     ioTimeout time.Duration
@@ -105,6 +108,7 @@ func (c* Check) PingUrl() {
     var (
         testError string
         lastDeadCall time.Time
+        lastStateChange = time.Now()
         status = true
         newStatus = true
         i = time.Duration(0)
@@ -134,6 +138,7 @@ func (c* Check) PingUrl() {
         }
         // Check if the status changed before updating Redis
         if newStatus != status {
+            lastStateChange = time.Now()
             if newStatus == true {
                 log.Printf("%s is back online\n", c.BackendUrl)
                 if c.aliveCallback != nil {
@@ -168,6 +173,12 @@ func (c* Check) PingUrl() {
                 c.checkIfBreakCallback() == true {
                     log.Printf("Lost the lock for %s\n", c.BackendUrl)
                     break
+            }
+            // Let's see if the check is in the same state for a while
+            if time.Since(lastStateChange) >= checkDuration {
+                log.Printf("%s stayed in the same state for a long time\n",
+                    c.BackendUrl)
+                break
             }
             i = time.Duration(0)
         }
