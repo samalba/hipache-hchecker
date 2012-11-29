@@ -17,8 +17,8 @@ const (
     HTTP_METHOD = "HEAD"
     // Check the URL every 3 seconds
     CHECK_INTERVAL = 3
-    // If the test keeps the same state for 1 week, stop it
-    CHECK_DURATION = 604800
+    // If the test keeps the same state for 1 hour, stop it
+    CHECK_DURATION = 3600
     // Check every 1 minute if we break the check
     CHECK_BREAK_INTERVAL = 60
     // Connection timeout is 3 seconds by default
