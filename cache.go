@@ -6,7 +6,6 @@ import (
     "time"
     "sync"
     "errors"
-    "encoding/json"
     "github.com/garyburd/redigo/redis"
 )
 
@@ -33,26 +32,20 @@ func NewCache() (*Cache, error) {
         return nil, errors.New(fmt.Sprintf("Cannot connect to Redis (%s)",
             err.Error()))
     }
-    return &Cache{redisConn: redisConn}, nil
+    cache := &Cache{
+        redisConn: redisConn,
+        backendsMapping: make(map[string]map[string][]int)}
+    return cache, nil
 }
 
 /*
  * Maintain a mapping between Frontends and Backends ID
  */
-func (c *Cache) updateFrontendMapping(check *Check, metaKey string, metaData string) {
-    var m map[string][]int
-    if len(metaData) == 0 {
-        // There is no meta-data yet, let's init a mapping
+func (c *Cache) updateFrontendMapping(check *Check) {
+    m, exists := c.backendsMapping[check.BackendUrl]
+    if !exists {
         m = make(map[string][]int)
-        m[check.FrontendKey] = []int{check.BackendId}
-        b, _ := json.Marshal(m)
-        c.redisMutex.Lock()
-        c.redisConn.Do("HSET", REDIS_KEY, metaKey, string(b))
-        c.redisMutex.Unlock()
-        return
     }
-    // There is meta-data, let's load it first
-    json.Unmarshal([]byte(metaData), &m)
     if val, ok := m[check.FrontendKey]; ok {
         for _, item := range val {
             if item == check.BackendId {
@@ -66,29 +59,27 @@ func (c *Cache) updateFrontendMapping(check *Check, metaKey string, metaData str
         // The frontend is new
         m[check.FrontendKey] = []int{check.BackendId}
     }
-    // Finally, update the meta-data
-    b, _ := json.Marshal(m)
-    c.redisMutex.Lock()
-    c.redisConn.Do("HSET", REDIS_KEY, metaKey, string(b))
-    c.redisMutex.Unlock()
+    c.backendsMapping[check.BackendUrl] = m
 }
 
 /*
  * Lock a backend in Redis by its URL
  */
-func (c *Cache) LockBackend(check *Check) (bool) {
-    metaKey := check.BackendUrl + ";" + myId
+func (c *Cache) LockBackend(check *Check) bool {
+    // The syncKey makes sure an entire backend mapping is keep in the same
+    // process (we never update a backend mapping from 2 different processes)
+    syncKey := check.BackendUrl + ";" + myId
     c.redisMutex.Lock()
     c.redisConn.Send("MULTI")
     // Lock the backend with a temporary value, we'll update this with the
     // goroutine signature later
     c.redisConn.Send("HSETNX", REDIS_KEY, check.BackendUrl, 1)
-    c.redisConn.Send("HGET", REDIS_KEY, metaKey)
+    c.redisConn.Send("HEXISTS", REDIS_KEY, syncKey)
     reply, _ := redis.Values(c.redisConn.Do("EXEC"))
     c.redisMutex.Unlock()
     locked, _ := redis.Bool(reply[0], nil)
-    metaData, _ := redis.String(reply[1], nil)
-    if locked == false && len(metaData) == 0 {
+    isMine, _ := redis.Bool(reply[1], nil)
+    if locked == false && isMine == false {
         // The backend is being monitored by someone else
         return false
     }
@@ -100,15 +91,16 @@ func (c *Cache) LockBackend(check *Check) (bool) {
         // will get the same sig
         sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
         c.redisConn.Do("HSET", REDIS_KEY, check.BackendUrl, sig)
+        c.redisConn.Do("HSET", REDIS_KEY, syncKey, 1)
         check.routineSig = sig
         c.redisMutex.Unlock()
     }
     // Let's update the mapping in case this is a new frontend
-    c.updateFrontendMapping(check, metaKey, metaData)
+    c.updateFrontendMapping(check)
     return locked
 }
 
-func (c *Cache) IsUnlockedBackend(check *Check) (bool) {
+func (c *Cache) IsUnlockedBackend(check *Check) bool {
     c.redisMutex.Lock()
     // On top of checking the lock, we compare the lock content to make sure
     // we still own the lock
@@ -122,20 +114,14 @@ func (c *Cache) UnlockBackend(check *Check) {
     c.redisConn.Do("HDEL", REDIS_KEY, check.BackendUrl,
         check.BackendUrl + ":" + myId)
     c.redisMutex.Unlock()
-}
-
-func (c *Cache) getBackendMetaData(check *Check) map[string][]int {
-    var m map[string][]int
-    metaKey := check.BackendUrl + ";" + myId
-    c.redisMutex.Lock()
-    metaData, _ := redis.String(c.redisConn.Do("HGET", REDIS_KEY, metaKey))
-    c.redisMutex.Unlock()
-    json.Unmarshal([]byte(metaData), &m)
-    return m
+    delete(c.backendsMapping, check.BackendUrl)
 }
 
 func (c *Cache) MarkBackendDead(check *Check) {
-    m := c.getBackendMetaData(check)
+    m, exists := c.backendsMapping[check.BackendUrl]
+    if !exists {
+        return
+    }
     c.redisMutex.Lock()
     c.redisConn.Send("MULTI")
     for frontendKey, ids := range m {
@@ -152,7 +138,10 @@ func (c *Cache) MarkBackendDead(check *Check) {
 }
 
 func (c *Cache) MarkBackendAlive(check *Check) {
-    m := c.getBackendMetaData(check)
+    m, exists := c.backendsMapping[check.BackendUrl]
+    if !exists {
+        return
+    }
     c.redisMutex.Lock()
     c.redisConn.Send("MULTI")
     for frontendKey, ids := range m {

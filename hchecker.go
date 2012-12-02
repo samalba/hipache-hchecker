@@ -43,6 +43,7 @@ func addCheck(line string) {
     })
     check.SetExitCallback(func () {
         runningCheckers -= 1
+        cache.UnlockBackend(check)
     })
     r := cache.LockBackend(check)
     if r == false {
