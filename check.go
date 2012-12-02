@@ -46,8 +46,8 @@ type Check struct {
     BackendGroupLength int
     FrontendKey string
 
-    // Map string used to store meta-data related to the check
-    MetaDataStore map[string]string
+    // Goroutine unique signature
+    routineSig string
 
     // Called when backend dies
     deadCallback func ()
@@ -68,7 +68,6 @@ func NewCheck(line string) (*Check, error) {
     backendGroupLength, _ := strconv.Atoi(parts[3])
     c := &Check{BackendUrl: parts[1], BackendId: backendId,
         BackendGroupLength: backendGroupLength, FrontendKey: parts[0]}
-    c.MetaDataStore = make(map[string]string)
     return c, nil
 }
 

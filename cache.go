@@ -22,6 +22,9 @@ var (
 type Cache struct {
     redisConn redis.Conn
     redisMutex sync.Mutex
+    // Maintain a mapping between a backends and several frontend
+    // -> map[BACKEND_URL][FRONTEND_NAME][BACKEND_ID]
+    backendsMapping map[string]map[string][]int
 }
 
 func NewCache() (*Cache, error) {
@@ -97,7 +100,7 @@ func (c *Cache) LockBackend(check *Check) (bool) {
         // will get the same sig
         sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
         c.redisConn.Do("HSET", REDIS_KEY, check.BackendUrl, sig)
-        check.MetaDataStore["routineSig"] = sig
+        check.routineSig = sig
         c.redisMutex.Unlock()
     }
     // Let's update the mapping in case this is a new frontend
@@ -111,7 +114,7 @@ func (c *Cache) IsUnlockedBackend(check *Check) (bool) {
     // we still own the lock
     reply, _ := redis.String(c.redisConn.Do("HGET", REDIS_KEY, check.BackendUrl))
     c.redisMutex.Unlock()
-    return (reply != check.MetaDataStore["routineSig"])
+    return (reply != check.routineSig)
 }
 
 func (c *Cache) UnlockBackend(check *Check) {
