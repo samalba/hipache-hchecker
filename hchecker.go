@@ -3,11 +3,14 @@ package main
 
 import (
         "os"
+        "os/signal"
+        "syscall"
         "fmt"
         "log"
         "time"
         "flag"
         "runtime"
+        "runtime/pprof"
         )
 
 const VERSION = "0.1.2"
@@ -68,7 +71,35 @@ func printStats() {
     }()
 }
 
-func parseFlags() {
+/*
+ * Enables CPU profile
+ */
+func enableCPUProfile() {
+    cwd, _ := os.Getwd()
+    log.Printf("CPU profile will be written to \"%s/%s\"", cwd, "hchecker.prof")
+    f, err := os.Create("hchecker.prof")
+    if err != nil {
+        log.Fatal("Cannot enable CPU profile:", err)
+    }
+    pprof.StartCPUProfile(f)
+}
+
+/*
+ * Listens to signals
+ */
+func handleSignals() {
+    c := make(chan os.Signal)
+    signal.Notify(c, syscall.SIGINT)
+    go func () {
+        switch <-c {
+            case syscall.SIGINT:
+                pprof.StopCPUProfile()
+                os.Exit(0)
+        }
+    }()
+}
+
+func parseFlags(cpuProfile *bool) {
     parseDuration := func (v *time.Duration, n string, def int, help string) {
         i := flag.Int(n, def, help)
         *v = time.Duration(*i) * time.Second
@@ -85,6 +116,8 @@ func parseFlags() {
         "HTTP User-Agent header")
     flag.StringVar(&redisAddress, "redis", REDIS_ADDRESS,
         "Network address of Redis")
+    flag.BoolVar(cpuProfile, "cpuprofile", false,
+        "Write CPU profile to \"hchecker.prof\" (current directory)")
     flag.Parse()
 }
 
@@ -92,6 +125,7 @@ func main() {
     var (
         err error
         hostname string
+        cpuProfile bool
         )
     for  _, arg := range os.Args {
         if !(arg == "-v" || arg == "--version" || arg == "-version") {
@@ -100,12 +134,16 @@ func main() {
         fmt.Println("hchecker version", VERSION)
         os.Exit(0)
     }
-    parseFlags()
+    parseFlags(&cpuProfile)
     runtime.GOMAXPROCS(runtime.NumCPU())
     hostname, _ = os.Hostname()
     myId = fmt.Sprintf("%s#%d", hostname, os.Getpid())
     // Prefix each line of log
     log.SetPrefix(myId + " ")
+    if cpuProfile == true {
+        enableCPUProfile()
+    }
+    handleSignals()
     cache, err = NewCache()
     if err != nil {
         log.Println(err.Error())
