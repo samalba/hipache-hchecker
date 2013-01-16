@@ -126,7 +126,7 @@ func (c* Check) PingUrl() {
                 c.BackendUrl, err.Error())
         } else {
             // No TCP error, checking HTTP code
-            if resp.StatusCode > 500 && resp.StatusCode < 600 &&
+            if resp.StatusCode >= 500 && resp.StatusCode < 600 &&
                 resp.StatusCode != 503 {
                     newStatus = false
                     testError = fmt.Sprintf("HTTP error on %s: %#v",
