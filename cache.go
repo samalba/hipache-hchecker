@@ -35,6 +35,11 @@ func NewCache() (*Cache, error) {
     cache := &Cache{
         redisConn: redisConn,
         backendsMapping: make(map[string]map[string][]int)}
+    // We're starting, let's clear any previous meta-data
+    // WARNING: This can be a problem if there are several processes sharing
+    // the same redis on the same machine. If one of them is restarted, it'll
+    // clear the meta-data of everyone...
+    redisConn.Do("DEL", REDIS_KEY)
     return cache, nil
 }
 
