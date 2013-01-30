@@ -13,7 +13,7 @@ import (
         "runtime/pprof"
         )
 
-const VERSION = "0.1.3"
+const VERSION = "0.1.4"
 
 var (
     myId string
