@@ -70,7 +70,7 @@ func (c *Cache) updateFrontendMapping(check *Check) {
 /*
  * Lock a backend in Redis by its URL
  */
-func (c *Cache) LockBackend(check *Check) bool {
+func (c *Cache) LockBackend(check *Check) (bool, bool) {
     // The syncKey makes sure an entire backend mapping is keep in the same
     // process (we never update a backend mapping from 2 different processes)
     syncKey := check.BackendUrl + ";" + myId
@@ -86,7 +86,7 @@ func (c *Cache) LockBackend(check *Check) bool {
     isMine, _ := redis.Bool(reply[1], nil)
     if locked == false && isMine == false {
         // The backend is being monitored by someone else
-        return false
+        return false, false
     }
     if locked == true {
         // we got the lock, let's create a unique sig for the goroutine
@@ -102,7 +102,7 @@ func (c *Cache) LockBackend(check *Check) bool {
     }
     // Let's update the mapping in case this is a new frontend
     c.updateFrontendMapping(check)
-    return locked
+    return locked, isMine
 }
 
 func (c *Cache) IsUnlockedBackend(check *Check) bool {

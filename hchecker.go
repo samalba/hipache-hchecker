@@ -19,6 +19,7 @@ var (
     myId string
     cache *Cache
     runningCheckers = 0
+    chanCheckers = make(map[string]chan int)
 )
 
 func addCheck(line string) {
@@ -33,8 +34,29 @@ func addCheck(line string) {
         // backends (backend is part of a group)
         return
     }
+    r, isMine := cache.LockBackend(check)
+    if r == false {
+        // Backend already locked
+        if isMine == true {
+            // If the backend is already monitored by the current process,
+            // we advertise the goroutine (pingUrl) that we got a new dead
+            // event (probably from a passive check inside Hipache)
+            ch, exists := chanCheckers[check.BackendUrl]
+            if exists {
+                // Non-blocking send
+                select {
+                    case ch <- 1:
+                    default:
+                }
+            }
+        }
+        return
+    }
+    // Create the routine's channel
+    ch := make(chan int, 1)
+    chanCheckers[check.BackendUrl] = ch
     // Set all the callbacks for the check. They will be called during
-    // the PingUrl at several steps
+    // the PingUrl at different steps
     check.SetDeadCallback(func () {
         cache.MarkBackendDead(check)
     })
@@ -47,14 +69,11 @@ func addCheck(line string) {
     check.SetExitCallback(func () {
         runningCheckers -= 1
         cache.UnlockBackend(check)
+        // clear the channel
+        delete(chanCheckers, check.BackendUrl)
     })
-    r := cache.LockBackend(check)
-    if r == false {
-        // Backend already locked
-        return
-    }
     // Check the URL at a regular interval
-    go check.PingUrl()
+    go check.PingUrl(ch)
     runningCheckers += 1
     log.Printf("Added check for: %s\n", check.BackendUrl)
 }

@@ -102,13 +102,13 @@ func (c *Check) SetExitCallback(callback func ()) {
     c.exitCallback = callback
 }
 
-func (c* Check) PingUrl() {
+func (c* Check) PingUrl(ch chan int) {
     // Current status, true for alive, false for dead
     var (
         testError string
         lastDeadCall time.Time
         lastStateChange = time.Now()
-        status = true
+        status = false
         newStatus = true
         i = time.Duration(0)
         )
@@ -116,6 +116,13 @@ func (c* Check) PingUrl() {
         httpClient = &http.Client{Transport: createHttpTransport()}
     }
     for {
+        // Let's check the channel in case we received a new "dead" event
+        select {
+            case <- ch:
+                // Forcing the previous status as false
+                status = false
+            default:
+        }
         req, _ := http.NewRequest(httpMethod, c.BackendUrl, nil)
         req.Header.Add("User-Agent", userAgent)
         resp, err := httpClient.Do(req)
