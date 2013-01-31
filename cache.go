@@ -179,3 +179,9 @@ func (c *Cache) ListenToChannel(channel string, callback func (line string)) err
     }
     return nil
 }
+
+func (c *Cache) PingAlive() {
+    c.redisMutex.Lock()
+    c.redisConn.Do("SET", "hchecker_ping", time.Now().Unix())
+    c.redisMutex.Unlock()
+}
