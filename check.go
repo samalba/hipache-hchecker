@@ -142,7 +142,9 @@ func (c* Check) PingUrl(ch chan int) {
                     newStatus = true
                 }
         }
-        resp.Body.Close()
+        if resp != nil && resp.Body != nil {
+            resp.Body.Close()
+        }
         // Check if the status changed before updating Redis
         if newStatus != status {
             lastStateChange = time.Now()
