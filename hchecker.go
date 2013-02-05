@@ -162,7 +162,9 @@ func main() {
         os.Exit(0)
     }
     parseFlags(&cpuProfile)
-    runtime.GOMAXPROCS(runtime.NumCPU())
+    // Force 1 CPU to reduce parallelism. If you want to use more CPUs, prefer
+    // spawning several processes instead.
+    runtime.GOMAXPROCS(1)
     hostname, _ = os.Hostname()
     myId = fmt.Sprintf("%s#%d", hostname, os.Getpid())
     // Prefix each line of log
