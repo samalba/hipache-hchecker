@@ -82,20 +82,18 @@ func addCheck(line string) {
  * Prints some stats on runtime
  */
 func printStats(cache *Cache) {
-    go func () {
-        const step = 10 // 10 seconds
-        count := 0
-        for {
-            cache.PingAlive()
-            time.Sleep(time.Duration(step) * time.Second)
-            count += step
-            if count >= 60 {
-                // Every minute
-                count = 0
-                log.Printf("%d backend URLs are being tested\n", runningCheckers)
-            }
+    const step = 10 // 10 seconds
+    count := 0
+    for {
+        cache.PingAlive()
+        time.Sleep(time.Duration(step) * time.Second)
+        count += step
+        if count >= 60 {
+            // Every minute
+            count = 0
+            log.Printf("%d backend URLs are being tested\n", runningCheckers)
         }
-    }()
+    }
 }
 
 /*
@@ -178,9 +176,11 @@ func main() {
         log.Println(err.Error())
         os.Exit(1)
     }
-    printStats(cache)
     err = cache.ListenToChannel("dead", addCheck)
     if err != nil {
         log.Println(err.Error())
+        os.Exit(1)
     }
+    // This function will block and print the stats every minute
+    printStats(cache)
 }
