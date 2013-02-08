@@ -1,14 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
-	"runtime"
 	"time"
 )
 
@@ -126,6 +126,7 @@ func (c *Check) PingUrl() {
 		lastStateChange = time.Now()
 		status          = false
 		newStatus       = true
+		firstCheck      = true
 		i               = time.Duration(0)
 	)
 	for {
@@ -149,7 +150,7 @@ func (c *Check) PingUrl() {
 			resp.Body.Close()
 		}
 		// Check if the status changed before updating Redis
-		if newStatus != status {
+		if newStatus != status || firstCheck == true {
 			lastStateChange = time.Now()
 			if newStatus == true {
 				if c.aliveCallback != nil {
@@ -175,6 +176,7 @@ func (c *Check) PingUrl() {
 			}
 		}
 		status = newStatus
+		firstCheck = false
 		time.Sleep(checkInterval)
 		i += checkInterval
 		// At longer interval, we check if still have the lock on the backend

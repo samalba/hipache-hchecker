@@ -75,14 +75,22 @@ func printStats(cache *Cache) {
 	const step = 10 // 10 seconds
 	count := 0
 	for {
-		cache.PingAlive()
+		if dryRun == false {
+			// In dry run mode, we don't announce our presence
+			cache.PingAlive()
+		}
 		time.Sleep(time.Duration(step) * time.Second)
 		count += step
 		if count >= 60 {
 			// Every minute
 			count = 0
-			log.Println(runningCheckers, "backend URLs are being tested,",
-				"using", runtime.NumGoroutine(), "goroutines")
+			msg := "backend URLs are being tested"
+			if dryRun == true {
+				msg += " (dry run)"
+			}
+			msg += ","
+			log.Println(runningCheckers, msg, "using", runtime.NumGoroutine(),
+				"goroutines")
 		}
 	}
 }
