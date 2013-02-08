@@ -23,8 +23,7 @@ var (
 func addCheck(line string) {
 	check, err := NewCheck(line)
 	if err != nil {
-		log.Printf("Warning: got invalid data on the \"dead\" "+
-			"channel (\"%s\")\n", line)
+		log.Prinln("Warning: got invalid data on the \"dead\" channel:", line)
 		return
 	}
 	if check.BackendGroupLength <= 1 {
@@ -53,7 +52,7 @@ func addCheck(line string) {
 	// Check the URL at a regular interval
 	go check.PingUrl()
 	runningCheckers += 1
-	log.Printf("Added check for: %s\n", check.BackendUrl)
+	log.Println(check.BackendUrl, "Added check")
 }
 
 /*
@@ -69,7 +68,7 @@ func printStats(cache *Cache) {
 		if count >= 60 {
 			// Every minute
 			count = 0
-			log.Printf("%d backend URLs are being tested\n", runningCheckers)
+			log.Println(runningCheckers, "backend URLs are being tested")
 		}
 	}
 }
@@ -79,7 +78,8 @@ func printStats(cache *Cache) {
  */
 func enableCPUProfile() {
 	cwd, _ := os.Getwd()
-	log.Printf("CPU profile will be written to \"%s/%s\"", cwd, "hchecker.prof")
+	log.Printf("CPU profile will be written to \"%s/%s\"\n",
+		cwd, "hchecker.prof")
 	f, err := os.Create("hchecker.prof")
 	if err != nil {
 		log.Fatal("Cannot enable CPU profile:", err)

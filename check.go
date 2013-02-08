@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -119,7 +118,6 @@ func (c *Check) doHttpRequest() (*http.Response, error) {
 func (c *Check) PingUrl() {
 	// Current status, true for alive, false for dead
 	var (
-		testError       string
 		lastDeadCall    time.Time
 		lastStateChange = time.Now()
 		status          = false
@@ -131,17 +129,16 @@ func (c *Check) PingUrl() {
 		if err != nil {
 			// TCP error
 			newStatus = false
-			testError = fmt.Sprintf("TCP error on %s: %#v",
-				c.BackendUrl, err.Error())
+			log.Println(c.BackendUrl, "TCP error:", err.Error())
 		} else {
 			// No TCP error, checking HTTP code
 			if resp.StatusCode >= 500 && resp.StatusCode < 600 &&
 				resp.StatusCode != 503 {
 				newStatus = false
-				testError = fmt.Sprintf("HTTP error on %s: %#v",
-					c.BackendUrl, resp.StatusCode)
+				log.Println(c.BackendUrl, "HTTP error:", resp.Status)
 			} else {
 				newStatus = true
+				log.Println(c.BackendUrl, "OK", resp.StatusCode)
 			}
 		}
 		if resp != nil && resp.Body != nil {
@@ -151,15 +148,15 @@ func (c *Check) PingUrl() {
 		if newStatus != status {
 			lastStateChange = time.Now()
 			if newStatus == true {
-				log.Printf("%s is back online\n", c.BackendUrl)
 				if c.aliveCallback != nil {
 					c.aliveCallback()
+					log.Println(c.BackendUrl, "Flagged alive")
 				}
 				lastDeadCall = time.Time{}
 			} else {
-				log.Println(testError)
 				if c.deadCallback != nil {
 					c.deadCallback()
+					log.Println(c.BackendUrl, "Flagged dead")
 				}
 				lastDeadCall = time.Now()
 			}
@@ -182,13 +179,12 @@ func (c *Check) PingUrl() {
 		if i >= checkBreakInterval {
 			if c.checkIfBreakCallback != nil &&
 				c.checkIfBreakCallback() == true {
-				log.Printf("Lost the lock for %s\n", c.BackendUrl)
+				log.Println(c.BackendUrl, "Lost the lock")
 				break
 			}
 			// Let's see if the check is in the same state for a while
 			if time.Since(lastStateChange) >= checkDuration {
-				log.Printf("%s stayed in the same state for a long time\n",
-					c.BackendUrl)
+				log.Println(c.BackendUrl, "Removed check")
 				break
 			}
 			i = time.Duration(0)
