@@ -86,7 +86,7 @@ func (c *Check) SetExitCallback(callback func()) {
 	c.exitCallback = callback
 }
 
-func (c *Check) doHttpRequest() {
+func (c *Check) doHttpRequest() (*http.Response, error) {
 	if httpClient == nil {
 		httpDial := func(proto string, addr string) (net.Conn, error) {
 			conn, err := net.DialTimeout(proto, addr, connectionTimeout)
@@ -105,6 +105,7 @@ func (c *Check) doHttpRequest() {
 	req, _ := http.NewRequest(httpMethod, c.BackendUrl, nil)
 	req.Header.Add("User-Agent", userAgent)
 	fmt.Printf("REQUEST -> %#v\n", req)
+	return httpClient.Do(req)
 }
 
 func (c *Check) PingUrl() {
@@ -118,10 +119,7 @@ func (c *Check) PingUrl() {
 		i               = time.Duration(0)
 	)
 	for {
-		req, _ := http.NewRequest(httpMethod, c.BackendUrl, nil)
-		req.Header.Add("User-Agent", userAgent)
-		fmt.Printf("REQUEST -> %#v\n", req)
-		resp, err := httpClient.Do(req)
+		resp, err := c.doHttpRequest()
 		if err != nil {
 			// TCP error
 			newStatus = false
