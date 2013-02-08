@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"errors"
 	"log"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"runtime"
 	"time"
 )
 
@@ -27,8 +29,6 @@ const (
 	CONNECTION_TIMEOUT = 3
 	// IO timeout applies after the connection
 	IO_TIMEOUT = 3
-	// User-Agent for all tests
-	USER_AGENT = "dotCloud-HealthCheck/1.0 go/1.0.3"
 )
 
 var (
@@ -36,12 +36,12 @@ var (
 	httpMethod         string
 	httpUri            string
 	httpHost           string
+	httpUserAgent      string
 	checkInterval      time.Duration
 	checkDuration      = time.Duration(CHECK_DURATION) * time.Second
 	checkBreakInterval = time.Duration(CHECK_BREAK_INTERVAL) * time.Second
 	connectionTimeout  time.Duration
 	ioTimeout          time.Duration
-	userAgent          string
 )
 
 type Check struct {
@@ -72,6 +72,10 @@ func NewCheck(line string) (*Check, error) {
 	backendGroupLength, _ := strconv.Atoi(parts[3])
 	c := &Check{BackendUrl: parts[1], BackendId: backendId,
 		BackendGroupLength: backendGroupLength, FrontendKey: parts[0]}
+	if len(httpUserAgent) == 0 {
+		httpUserAgent = fmt.Sprintf("dotCloud-HealthCheck/%s %s", VERSION,
+			runtime.Version())
+	}
 	return c, nil
 }
 
@@ -110,7 +114,7 @@ func (c *Check) doHttpRequest() (*http.Response, error) {
 	req, _ := http.NewRequest(httpMethod, c.BackendUrl, nil)
 	req.URL.Path = httpUri
 	req.Host = httpHost
-	req.Header.Add("User-Agent", userAgent)
+	req.Header.Add("User-Agent", httpUserAgent)
 	req.Close = true
 	return httpTransport.RoundTrip(req)
 }
@@ -150,13 +154,11 @@ func (c *Check) PingUrl() {
 			if newStatus == true {
 				if c.aliveCallback != nil {
 					c.aliveCallback()
-					log.Println(c.BackendUrl, "Flagged alive")
 				}
 				lastDeadCall = time.Time{}
 			} else {
 				if c.deadCallback != nil {
 					c.deadCallback()
-					log.Println(c.BackendUrl, "Flagged dead")
 				}
 				lastDeadCall = time.Now()
 			}

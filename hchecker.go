@@ -17,13 +17,14 @@ const VERSION = "0.2.1"
 var (
 	myId            string
 	cache           *Cache
+	dryRun          = false
 	runningCheckers = 0
 )
 
 func addCheck(line string) {
 	check, err := NewCheck(line)
 	if err != nil {
-		log.Prinln("Warning: got invalid data on the \"dead\" channel:", line)
+		log.Println("Warning: got invalid data on the \"dead\" channel:", line)
 		return
 	}
 	if check.BackendGroupLength <= 1 {
@@ -37,10 +38,22 @@ func addCheck(line string) {
 	// Set all the callbacks for the check. They will be called during
 	// the PingUrl at different steps
 	check.SetDeadCallback(func() {
-		cache.MarkBackendDead(check)
+		msg := "Flagged dead"
+		if dryRun == false {
+			cache.MarkBackendDead(check)
+		} else {
+			msg += " (dry run)"
+		}
+		log.Println(check.BackendUrl, msg)
 	})
 	check.SetAliveCallback(func() {
-		cache.MarkBackendAlive(check)
+		msg := "Flagged alive"
+		if dryRun == false {
+			cache.MarkBackendAlive(check)
+		} else {
+			msg += " (dry run)"
+		}
+		log.Println(check.BackendUrl, msg)
 	})
 	check.SetCheckIfBreakCallback(func() bool {
 		return cache.IsUnlockedBackend(check)
@@ -68,7 +81,8 @@ func printStats(cache *Cache) {
 		if count >= 60 {
 			// Every minute
 			count = 0
-			log.Println(runningCheckers, "backend URLs are being tested")
+			log.Println(runningCheckers, "backend URLs are being tested,",
+				"using", runtime.NumGoroutine(), "goroutines")
 		}
 	}
 }
@@ -119,12 +133,12 @@ func parseFlags(cpuProfile *bool) {
 		"TCP connection timeout (seconds)")
 	parseDuration(&ioTimeout, "io", IO_TIMEOUT,
 		"Socket read/write timeout (seconds)")
-	flag.StringVar(&userAgent, "agent", USER_AGENT,
-		"HTTP User-Agent header")
 	flag.StringVar(&redisAddress, "redis", REDIS_ADDRESS,
 		"Network address of Redis")
 	flag.BoolVar(cpuProfile, "cpuprofile", false,
 		"Write CPU profile to \"hchecker.prof\" (current directory)")
+	flag.BoolVar(&dryRun, "dryrun", false,
+		"Enable dry run (or simulation mode). Do not update the Redis.")
 	flag.Parse()
 }
 
@@ -134,14 +148,17 @@ func main() {
 		hostname   string
 		cpuProfile bool
 	)
+	fmt.Println("hchecker version", VERSION)
 	for _, arg := range os.Args {
 		if !(arg == "-v" || arg == "--version" || arg == "-version") {
 			continue
 		}
-		fmt.Println("hchecker version", VERSION)
 		os.Exit(0)
 	}
 	parseFlags(&cpuProfile)
+	if dryRun == true {
+		fmt.Println("Enabled dry run mode (simulation)")
+	}
 	// Force 1 CPU to reduce parallelism. If you want to use more CPUs, prefer
 	// spawning several processes instead.
 	runtime.GOMAXPROCS(1)
