@@ -109,6 +109,10 @@ func parseFlags(cpuProfile *bool) {
 	}
 	flag.StringVar(&httpMethod, "method", HTTP_METHOD,
 		"HTTP method")
+	flag.StringVar(&httpUri, "uri", HTTP_URI,
+		"HTTP URI")
+	flag.StringVar(&httpHost, "host", HTTP_HOST,
+		"HTTP host header")
 	parseDuration(&checkInterval, "interval", CHECK_INTERVAL,
 		"Check interval (seconds)")
 	parseDuration(&connectionTimeout, "connect", CONNECTION_TIMEOUT,

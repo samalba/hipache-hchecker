@@ -13,7 +13,11 @@ import (
 
 const (
 	// The HTTP method used for each test
-	HTTP_METHOD = "OPTIONS"
+	HTTP_METHOD = "HEAD"
+	// The HTTP URI
+	HTTP_URI = "/CloudHealthCheck"
+	// HTTP Host header
+	HTTP_HOST = "ping"
 	// Check the URL every 3 seconds
 	CHECK_INTERVAL = 3
 	// If the test keeps the same state for 1 hour, stop it
@@ -29,8 +33,10 @@ const (
 )
 
 var (
-	httpClient         *http.Client
+	httpTransport      *http.Transport
 	httpMethod         string
+	httpUri            string
+	httpHost           string
 	checkInterval      time.Duration
 	checkDuration      = time.Duration(CHECK_DURATION) * time.Second
 	checkBreakInterval = time.Duration(CHECK_BREAK_INTERVAL) * time.Second
@@ -87,7 +93,7 @@ func (c *Check) SetExitCallback(callback func()) {
 }
 
 func (c *Check) doHttpRequest() (*http.Response, error) {
-	if httpClient == nil {
+	if httpTransport == nil {
 		httpDial := func(proto string, addr string) (net.Conn, error) {
 			conn, err := net.DialTimeout(proto, addr, connectionTimeout)
 			if err != nil {
@@ -96,16 +102,18 @@ func (c *Check) doHttpRequest() (*http.Response, error) {
 			conn.SetDeadline(time.Now().Add(ioTimeout))
 			return conn, nil
 		}
-		transport := &http.Transport{
-			DisableKeepAlives: true,
-			Dial:              httpDial,
+		httpTransport = &http.Transport{
+			DisableKeepAlives:  true,
+			DisableCompression: true,
+			Dial:               httpDial,
 		}
-		httpClient = &http.Client{Transport: transport}
 	}
 	req, _ := http.NewRequest(httpMethod, c.BackendUrl, nil)
+	req.URL.Path = httpUri
+	req.Host = httpHost
 	req.Header.Add("User-Agent", userAgent)
-	fmt.Printf("REQUEST -> %#v\n", req)
-	return httpClient.Do(req)
+	req.Close = true
+	return httpTransport.RoundTrip(req)
 }
 
 func (c *Check) PingUrl() {
