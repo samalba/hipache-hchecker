@@ -22,6 +22,9 @@ class HTTPHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.send_response(self.server.code)
+        self.send_header('Content-Length', '0')
+        self.send_header('Connection', 'close')
+        self.end_headers()
 
     def do_HEAD(self):
         return self.do_GET()
@@ -86,5 +89,5 @@ class TestCase(unittest.TestCase):
         try:
             r = requests.get('http://localhost:{0}/'.format(port), timeout=1.0)
             return r.status_code
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             return -1
