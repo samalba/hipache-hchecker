@@ -22,6 +22,9 @@ type Cache struct {
 	// Maintain a mapping between a backends and several frontend
 	// -> map[BACKEND_URL][FRONTEND_NAME][BACKEND_ID]
 	backendsMapping map[string]map[string][]int
+	// Channel used to notify goroutine when a frontend has been added to the
+	// backendsMapping
+	channelMapping map[string]chan int
 }
 
 func NewCache() (*Cache, error) {
@@ -30,7 +33,9 @@ func NewCache() (*Cache, error) {
 	redisConn := redis.NewClient(conf)
 	cache := &Cache{
 		redisConn:       redisConn,
-		backendsMapping: make(map[string]map[string][]int)}
+		backendsMapping: make(map[string]map[string][]int),
+		channelMapping:  make(map[string]chan int),
+	}
 	// We're starting, let's clear any previous meta-data
 	// WARNING: This can be a problem if there are several processes sharing
 	// the same redis on the same machine. If one of them is restarted, it'll
@@ -61,12 +66,21 @@ func (c *Cache) updateFrontendMapping(check *Check) {
 		m[check.FrontendKey] = []int{check.BackendId}
 	}
 	c.backendsMapping[check.BackendUrl] = m
+	// Notify the goroutine that we added a frontend
+	ch, exists := c.channelMapping[check.BackendUrl]
+	if exists {
+		// Non-blocking send
+		select {
+		case ch <- 1:
+		default:
+		}
+	}
 }
 
 /*
  * Lock a backend in Redis by its URL
  */
-func (c *Cache) LockBackend(check *Check) bool {
+func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 	// The syncKey makes sure an entire backend mapping is keep in the same
 	// process (we never update a backend mapping from 2 different processes)
 	syncKey := check.BackendUrl + ";" + myId
@@ -80,21 +94,25 @@ func (c *Cache) LockBackend(check *Check) bool {
 	isMine, _ := resp.Elems[1].Bool()
 	if locked == false && isMine == false {
 		// The backend is being monitored by someone else
-		return false
+		return false, nil
 	}
-	if locked == true {
-		// we got the lock, let's create a unique sig for the goroutine
-		t := time.Now()
-		// This one is done in the lock, this will garanty that no routine
-		// will get the same sig
-		sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
-		c.redisConn.Hset(REDIS_KEY, check.BackendUrl, sig)
-		c.redisConn.Hset(REDIS_KEY, syncKey, 1)
-		check.routineSig = sig
+	if locked == false {
+		c.updateFrontendMapping(check)
+		return false, nil
 	}
-	// Let's update the mapping in case this is a new frontend
+	// we got the lock, let's create a unique sig for the goroutine
+	t := time.Now()
+	// This one is done in the lock, this will garanty that no routine
+	// will get the same sig
+	sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
+	c.redisConn.Hset(REDIS_KEY, check.BackendUrl, sig)
+	c.redisConn.Hset(REDIS_KEY, syncKey, 1)
+	check.routineSig = sig
+	// Create the channel
+	ch := make(chan int, 1)
+	c.channelMapping[check.BackendUrl] = ch
 	c.updateFrontendMapping(check)
-	return locked
+	return true, ch
 }
 
 func (c *Cache) IsUnlockedBackend(check *Check) bool {
@@ -106,8 +124,9 @@ func (c *Cache) IsUnlockedBackend(check *Check) bool {
 
 func (c *Cache) UnlockBackend(check *Check) {
 	c.redisConn.Hdel(REDIS_KEY, check.BackendUrl,
-		check.BackendUrl + ":" + myId)
+		check.BackendUrl+":"+myId)
 	delete(c.backendsMapping, check.BackendUrl)
+	delete(c.channelMapping, check.BackendUrl)
 }
 
 func (c *Cache) MarkBackendDead(check *Check) {

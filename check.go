@@ -119,7 +119,7 @@ func (c *Check) doHttpRequest() (*http.Response, error) {
 	return httpTransport.RoundTrip(req)
 }
 
-func (c *Check) PingUrl() {
+func (c *Check) PingUrl(ch chan int) {
 	// Current status, true for alive, false for dead
 	var (
 		lastDeadCall    time.Time
@@ -130,6 +130,13 @@ func (c *Check) PingUrl() {
 		i               = time.Duration(0)
 	)
 	for {
+		select {
+		case <-ch:
+			// If we added a frontend to the mapping, we consider it's the
+			// first check
+			firstCheck = true
+		default:
+		}
 		resp, err := c.doHttpRequest()
 		if err != nil {
 			// TCP error

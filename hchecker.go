@@ -32,7 +32,8 @@ func addCheck(line string) {
 		// backends (backend is part of a group)
 		return
 	}
-	if cache.LockBackend(check) == false {
+	locked, ch := cache.LockBackend(check)
+	if locked == false {
 		return
 	}
 	// Set all the callbacks for the check. They will be called during
@@ -63,7 +64,7 @@ func addCheck(line string) {
 		cache.UnlockBackend(check)
 	})
 	// Check the URL at a regular interval
-	go check.PingUrl()
+	go check.PingUrl(ch)
 	runningCheckers += 1
 	log.Println(check.BackendUrl, "Added check")
 }
