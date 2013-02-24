@@ -21,7 +21,7 @@ type Cache struct {
 	redisSub  *redis.Subscription
 	// Maintain a mapping between a backends and several frontend
 	// -> map[BACKEND_URL][FRONTEND_NAME][BACKEND_ID]
-	backendsMapping map[string]map[string][]int
+	backendsMapping map[string]map[string]int
 	// Channel used to notify goroutine when a frontend has been added to the
 	// backendsMapping
 	channelMapping map[string]chan int
@@ -33,7 +33,7 @@ func NewCache() (*Cache, error) {
 	redisConn := redis.NewClient(conf)
 	cache := &Cache{
 		redisConn:       redisConn,
-		backendsMapping: make(map[string]map[string][]int),
+		backendsMapping: make(map[string]map[string]int),
 		channelMapping:  make(map[string]chan int),
 	}
 	// We're starting, let's clear any previous meta-data
@@ -50,21 +50,9 @@ func NewCache() (*Cache, error) {
 func (c *Cache) updateFrontendMapping(check *Check) {
 	m, exists := c.backendsMapping[check.BackendUrl]
 	if !exists {
-		m = make(map[string][]int)
+		m = make(map[string]int)
 	}
-	if val, ok := m[check.FrontendKey]; ok {
-		for _, item := range val {
-			if item == check.BackendId {
-				// The backendId has been already stored, ignoring
-				return
-			}
-		}
-		// The frontend already exists, adding the new backendId
-		m[check.FrontendKey] = append(val, check.BackendId)
-	} else {
-		// The frontend is new
-		m[check.FrontendKey] = []int{check.BackendId}
-	}
+	m[check.FrontendKey] = check.BackendId
 	c.backendsMapping[check.BackendUrl] = m
 	// Notify the goroutine that we added a frontend
 	ch, exists := c.channelMapping[check.BackendUrl]
@@ -124,41 +112,66 @@ func (c *Cache) IsUnlockedBackend(check *Check) bool {
 
 func (c *Cache) UnlockBackend(check *Check) {
 	c.redisConn.Hdel(REDIS_KEY, check.BackendUrl,
-		check.BackendUrl+":"+myId)
+		check.BackendUrl + ":" + myId)
 	delete(c.backendsMapping, check.BackendUrl)
 	delete(c.channelMapping, check.BackendUrl)
+}
+
+func (c *Cache) checkBackendMapping(check *Check, frontendKey string,
+		backendId int, mapping *map[string]int) bool {
+	// Before changing the state (dead or alive) in the Redis, we make sure
+	// the backend is still both in memory and in Redis so we'll avoid wrong
+	// updates.
+	resp, _ := c.redisConn.Lindex("frontend:" + frontendKey, backendId + 1).Str()
+	if resp == check.BackendUrl {
+		return true
+	}
+	delete(*mapping, frontendKey)
+	return false
 }
 
 func (c *Cache) MarkBackendDead(check *Check) {
 	m, exists := c.backendsMapping[check.BackendUrl]
 	if !exists {
+		c.UnlockBackend(check)
 		return
 	}
 	c.redisConn.Transaction(func(mc *redis.MultiCall) {
-		for frontendKey, ids := range m {
-			deadKey := "dead:" + frontendKey
-			for _, id := range ids {
-				mc.Sadd(deadKey, id)
+		for frontendKey, id := range m {
+			if r := c.checkBackendMapping(check, frontendKey, id, &m); r == false {
+				continue
 			}
-			// Better way would be to set the same TTL than Hipache. Not critical
-			// since we'll clean the backend list
+			deadKey := "dead:" + frontendKey
+			mc.Sadd(deadKey, id)
+			// Better way would be to set the same TTL than Hipache. Not
+			// critical since we'll clean the backend list
 			mc.Expire(deadKey, 60)
 		}
 	})
+	if len(m) == 0 {
+		// checkBackenMapping() removed all frontend mapping, no need to check
+		// this backend anymore...
+		c.UnlockBackend(check)
+	}
 }
 
 func (c *Cache) MarkBackendAlive(check *Check) {
 	m, exists := c.backendsMapping[check.BackendUrl]
 	if !exists {
+		c.UnlockBackend(check)
 		return
 	}
 	c.redisConn.Transaction(func(mc *redis.MultiCall) {
-		for frontendKey, ids := range m {
-			for _, id := range ids {
-				mc.Srem("dead:"+frontendKey, id)
+		for frontendKey, id := range m {
+			if r := c.checkBackendMapping(check, frontendKey, id, &m); r == false {
+				continue
 			}
+			mc.Srem("dead:" + frontendKey, id)
 		}
 	})
+	if len(m) == 0 {
+		c.UnlockBackend(check)
+	}
 }
 
 func (c *Cache) ListenToChannel(channel string, callback func(line string)) error {

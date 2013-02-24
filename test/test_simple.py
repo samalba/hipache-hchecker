@@ -41,8 +41,7 @@ class SimpleTestCase(base.TestCase):
         port = 1080
         self.spawn_httpd(port, 501)
         self.spawn_httpd(port + 1, 200)
-        frontend = self.add_check(port)
-        self.add_check(port + 1, frontend=frontend)
+        frontend = self.add_check([port, port + 1])
         time.sleep(4)
         dead = self.redis.smembers('dead:{0}'.format(frontend))
         self.assertEqual(len(dead), 1)

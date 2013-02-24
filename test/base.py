@@ -77,12 +77,24 @@ class TestCase(unittest.TestCase):
         if pid in self._httpd_pids:
             self._httpd_pids.remove(pid)
 
+    def register_frontend(self, frontend, backend_url):
+        self.redis.rpush('frontend:{0}'.format(frontend), frontend, backend_url)
+
+    def unregister_frontend(self, frontend):
+        self.redis.delete('frontend:{0}'.format(frontend))
+        self.redis.delete('dead:{0}'.format(frontend))
+
     def add_check(self, port, frontend=None, num_backends=2):
         if not frontend:
             frontend = 'frontend-{0:6f}'.format(time.time())
-        line = '{0};http://localhost:{1};0;{2}'.format(frontend, port,
-                num_backends)
-        self.redis.publish('dead', line)
+        if not isinstance(port, (tuple, list)):
+            port = [port]
+        self.unregister_frontend(frontend)
+        for p in port:
+            self.register_frontend(frontend, 'http://localhost:{0}'.format(p))
+            line = '{0};http://localhost:{1};0;{2}'.format(frontend, p,
+                    num_backends)
+            self.redis.publish('dead', line)
         return frontend
 
     def http_request(self, port):

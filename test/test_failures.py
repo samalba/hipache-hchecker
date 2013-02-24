@@ -31,3 +31,22 @@ class SimpleTestCase(base.TestCase):
         dead = self.redis.smembers('dead:{0}'.format(frontend))
         self.assertEqual(len(dead), 0)
         self.assertEqual(self.http_request(port), 200)
+
+    def test_backend_replaced(self):
+        """ The backend ID of a frontend has been replaced by a new one """
+        port = 1080
+        pid = self.spawn_httpd(port)
+        frontend = self.add_check(port)
+        time.sleep(4)
+        dead = self.redis.smembers('dead:{0}'.format(frontend))
+        self.assertEqual(len(dead), 0)
+
+        # Replace the httpd, same backend id and different server
+        self.stop_httpd(pid)
+        port += 1
+        pid = self.spawn_httpd(port)
+        frontend = self.add_check(port, frontend=frontend)
+        time.sleep(4)
+        dead = self.redis.smembers('dead:{0}'.format(frontend))
+        self.assertEqual(len(dead), 0)
+        self.assertEqual(self.http_request(port), 200)
