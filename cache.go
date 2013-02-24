@@ -118,11 +118,13 @@ func (c *Cache) UnlockBackend(check *Check) {
 	delete(c.channelMapping, check.BackendUrl)
 }
 
+/*
+ * Before changing the state (dead or alive) in the Redis, we make sure
+ * the backend is still both in memory and in Redis so we'll avoid wrong
+ * updates.
+ */
 func (c *Cache) checkBackendMapping(check *Check, frontendKey string,
 	backendId int, mapping *map[string]int) bool {
-	// Before changing the state (dead or alive) in the Redis, we make sure
-	// the backend is still both in memory and in Redis so we'll avoid wrong
-	// updates.
 	resp, _ := c.redisConn.Lindex("frontend:"+frontendKey, backendId+1).Str()
 	if resp == check.BackendUrl {
 		return true
