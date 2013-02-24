@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fzzy/radix/redis"
+	"log"
 	"time"
 )
 
@@ -112,20 +113,21 @@ func (c *Cache) IsUnlockedBackend(check *Check) bool {
 
 func (c *Cache) UnlockBackend(check *Check) {
 	c.redisConn.Hdel(REDIS_KEY, check.BackendUrl,
-		check.BackendUrl + ":" + myId)
+		check.BackendUrl+":"+myId)
 	delete(c.backendsMapping, check.BackendUrl)
 	delete(c.channelMapping, check.BackendUrl)
 }
 
 func (c *Cache) checkBackendMapping(check *Check, frontendKey string,
-		backendId int, mapping *map[string]int) bool {
+	backendId int, mapping *map[string]int) bool {
 	// Before changing the state (dead or alive) in the Redis, we make sure
 	// the backend is still both in memory and in Redis so we'll avoid wrong
 	// updates.
-	resp, _ := c.redisConn.Lindex("frontend:" + frontendKey, backendId + 1).Str()
+	resp, _ := c.redisConn.Lindex("frontend:"+frontendKey, backendId+1).Str()
 	if resp == check.BackendUrl {
 		return true
 	}
+	log.Println(check.BackendUrl, "Mapping changed for", frontendKey)
 	delete(*mapping, frontendKey)
 	return false
 }
@@ -166,7 +168,7 @@ func (c *Cache) MarkBackendAlive(check *Check) {
 			if r := c.checkBackendMapping(check, frontendKey, id, &m); r == false {
 				continue
 			}
-			mc.Srem("dead:" + frontendKey, id)
+			mc.Srem("dead:"+frontendKey, id)
 		}
 	})
 	if len(m) == 0 {
