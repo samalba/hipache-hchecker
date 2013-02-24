@@ -20,7 +20,7 @@ type Cache struct {
 	redisConn *redis.Client
 	redisSub  *redis.Subscription
 	// Maintain a mapping between a backends and several frontend
-	// -> map[BACKEND_URL][FRONTEND_NAME][BACKEND_ID]
+	// -> map[BACKEND_URL][FRONTEND_NAME] = BACKEND_ID
 	backendsMapping map[string]map[string]int
 	// Channel used to notify goroutine when a frontend has been added to the
 	// backendsMapping
