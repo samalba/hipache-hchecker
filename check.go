@@ -54,9 +54,9 @@ type Check struct {
 	routineSig string
 
 	// Called when backend dies
-	deadCallback func()
+	deadCallback func() bool
 	// Called when the backend comes back to life
-	aliveCallback func()
+	aliveCallback func() bool
 	// Called every CHECK_BREAK_INTERVAL to stop the routine if returned true
 	checkIfBreakCallback func() bool
 	// Called when the check exits
@@ -79,11 +79,11 @@ func NewCheck(line string) (*Check, error) {
 	return c, nil
 }
 
-func (c *Check) SetDeadCallback(callback func()) {
+func (c *Check) SetDeadCallback(callback func() bool) {
 	c.deadCallback = callback
 }
 
-func (c *Check) SetAliveCallback(callback func()) {
+func (c *Check) SetAliveCallback(callback func() bool) {
 	c.aliveCallback = callback
 }
 
@@ -161,12 +161,18 @@ func (c *Check) PingUrl(ch chan int) {
 			lastStateChange = time.Now()
 			if newStatus == true {
 				if c.aliveCallback != nil {
-					c.aliveCallback()
+					if r := c.aliveCallback(); r == false {
+						log.Println(c.BackendUrl, "Backend not found in Redis")
+						break
+					}
 				}
 				lastDeadCall = time.Time{}
 			} else {
 				if c.deadCallback != nil {
-					c.deadCallback()
+					if r := c.deadCallback(); r == false {
+						log.Println(c.BackendUrl, "Backend not found in Redis")
+						break
+					}
 				}
 				lastDeadCall = time.Now()
 			}
@@ -177,7 +183,10 @@ func (c *Check) PingUrl(ch chan int) {
 				time.Since(lastDeadCall) >=
 					(time.Duration(30)*time.Second) {
 				if c.deadCallback != nil {
-					c.deadCallback()
+					if r := c.deadCallback(); r == false {
+						log.Println(c.BackendUrl, "Backend not found in Redis")
+						break
+					}
 				}
 				lastDeadCall = time.Now()
 			}
@@ -195,13 +204,14 @@ func (c *Check) PingUrl(ch chan int) {
 			}
 			// Let's see if the check is in the same state for a while
 			if time.Since(lastStateChange) >= checkDuration {
-				log.Println(c.BackendUrl, "Removed check")
+				log.Println(c.BackendUrl, "State is stable")
 				break
 			}
 			i = time.Duration(0)
 		}
 	}
 	if c.exitCallback != nil {
+		log.Println(c.BackendUrl, "Removed check")
 		c.exitCallback()
 	}
 }

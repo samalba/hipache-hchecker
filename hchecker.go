@@ -38,23 +38,27 @@ func addCheck(line string) {
 	}
 	// Set all the callbacks for the check. They will be called during
 	// the PingUrl at different steps
-	check.SetDeadCallback(func() {
-		msg := "Flagged dead"
+	check.SetDeadCallback(func() bool {
+		r := true
+		msg := "Flagging dead"
 		if dryRun == false {
-			cache.MarkBackendDead(check)
+			r = cache.MarkBackendDead(check)
 		} else {
 			msg += " (dry run)"
 		}
 		log.Println(check.BackendUrl, msg)
+		return r
 	})
-	check.SetAliveCallback(func() {
-		msg := "Flagged alive"
+	check.SetAliveCallback(func() bool {
+		r := true
+		msg := "Flagging alive"
 		if dryRun == false {
-			cache.MarkBackendAlive(check)
+			r = cache.MarkBackendAlive(check)
 		} else {
 			msg += " (dry run)"
 		}
 		log.Println(check.BackendUrl, msg)
+		return r
 	})
 	check.SetCheckIfBreakCallback(func() bool {
 		return cache.IsUnlockedBackend(check)

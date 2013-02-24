@@ -134,11 +134,15 @@ func (c *Cache) checkBackendMapping(check *Check, frontendKey string,
 	return false
 }
 
-func (c *Cache) MarkBackendDead(check *Check) {
+/*
+ * Flag the backend dead in Redis
+ * Returns false if no update has been performed (backend unlock)
+ */
+func (c *Cache) MarkBackendDead(check *Check) bool {
 	m, exists := c.backendsMapping[check.BackendUrl]
 	if !exists {
 		c.UnlockBackend(check)
-		return
+		return false
 	}
 	c.redisConn.Transaction(func(mc *redis.MultiCall) {
 		for frontendKey, id := range m {
@@ -156,14 +160,20 @@ func (c *Cache) MarkBackendDead(check *Check) {
 		// checkBackenMapping() removed all frontend mapping, no need to check
 		// this backend anymore...
 		c.UnlockBackend(check)
+		return false
 	}
+	return true
 }
 
-func (c *Cache) MarkBackendAlive(check *Check) {
+/*
+ * Flag the backend live in Redis
+ * Returns false if no update has been performed (backend unlock)
+ */
+func (c *Cache) MarkBackendAlive(check *Check) bool {
 	m, exists := c.backendsMapping[check.BackendUrl]
 	if !exists {
 		c.UnlockBackend(check)
-		return
+		return false
 	}
 	c.redisConn.Transaction(func(mc *redis.MultiCall) {
 		for frontendKey, id := range m {
@@ -175,7 +185,9 @@ func (c *Cache) MarkBackendAlive(check *Check) {
 	})
 	if len(m) == 0 {
 		c.UnlockBackend(check)
+		return false
 	}
+	return true
 }
 
 func (c *Cache) ListenToChannel(channel string, callback func(line string)) error {
