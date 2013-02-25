@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -68,9 +69,14 @@ func NewCheck(line string) (*Check, error) {
 	if len(parts) != 4 {
 		return nil, errors.New("Invalid check line")
 	}
+	u, err := url.Parse(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	backendUrl := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 	backendId, _ := strconv.Atoi(parts[2])
 	backendGroupLength, _ := strconv.Atoi(parts[3])
-	c := &Check{BackendUrl: parts[1], BackendId: backendId,
+	c := &Check{BackendUrl: backendUrl, BackendId: backendId,
 		BackendGroupLength: backendGroupLength, FrontendKey: parts[0]}
 	if len(httpUserAgent) == 0 {
 		httpUserAgent = fmt.Sprintf("dotCloud-HealthCheck/%s %s", VERSION,

@@ -92,7 +92,7 @@ class TestCase(unittest.TestCase):
         self.unregister_frontend(frontend)
         for p in port:
             self.register_frontend(frontend, 'http://localhost:{0}'.format(p))
-            line = '{0};http://localhost:{1};0;{2}'.format(frontend, p,
+            line = '{0};http://localhost:{1}/;0;{2}'.format(frontend, p,
                     num_backends)
             self.redis.publish('dead', line)
         return frontend
