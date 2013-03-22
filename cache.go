@@ -113,7 +113,7 @@ func (c *Cache) IsUnlockedBackend(check *Check) bool {
 
 func (c *Cache) UnlockBackend(check *Check) {
 	c.redisConn.Hdel(REDIS_KEY, check.BackendUrl,
-		check.BackendUrl+":"+myId)
+		check.BackendUrl+";"+myId)
 	delete(c.backendsMapping, check.BackendUrl)
 	delete(c.channelMapping, check.BackendUrl)
 }
