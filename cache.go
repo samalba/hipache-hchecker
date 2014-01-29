@@ -9,17 +9,19 @@ import (
 )
 
 const (
-	REDIS_KEY     = "hchecker"
+	REDIS_PREFFIX = "hchecker"
 	REDIS_ADDRESS = "localhost:6379"
 )
 
 var (
 	redisAddress string
+	redisSuffix string
 )
 
 type Cache struct {
 	redisConn *redis.Client
 	redisSub  *redis.Subscription
+	redisKey  string
 	// Maintain a mapping between a backends and several frontend
 	// -> map[BACKEND_URL][FRONTEND_NAME] = BACKEND_ID
 	backendsMapping map[string]map[string]int
@@ -32,16 +34,23 @@ func NewCache() (*Cache, error) {
 	conf := redis.DefaultConfig()
 	conf.Address = redisAddress
 	redisConn := redis.NewClient(conf)
+	var redisKey string
+	if (redisSuffix != "") {
+		redisKey = REDIS_PREFFIX+"_"+redisSuffix
+	}else{
+		redisKey = REDIS_PREFFIX
+	}
 	cache := &Cache{
 		redisConn:       redisConn,
+		redisKey:        redisKey,
 		backendsMapping: make(map[string]map[string]int),
 		channelMapping:  make(map[string]chan int),
 	}
 	// We're starting, let's clear any previous meta-data
 	// WARNING: This can be a problem if there are several processes sharing
-	// the same redis on the same machine. If one of them is restarted, it'll
-	// clear the meta-data of everyone...
-	redisConn.Del(REDIS_KEY)
+	// the same redis on the same machine - without specifying redis_suffix option. 
+	// If one of them is restarted, it'll clear the meta-data of everyone...
+	redisConn.Del(cache.redisKey)
 	return cache, nil
 }
 
@@ -76,8 +85,8 @@ func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 	// Lock the backend with a temporary value, we'll update this with the
 	// goroutine signature later
 	resp := c.redisConn.Transaction(func(mc *redis.MultiCall) {
-		mc.Hsetnx(REDIS_KEY, check.BackendUrl, 1)
-		mc.Hexists(REDIS_KEY, syncKey)
+		mc.Hsetnx(c.redisKey, check.BackendUrl, 1)
+		mc.Hexists(c.redisKey, syncKey)
 	})
 	locked, _ := resp.Elems[0].Bool()
 	isMine, _ := resp.Elems[1].Bool()
@@ -94,8 +103,8 @@ func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 	// This one is done in the lock, this will garanty that no routine
 	// will get the same sig
 	sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
-	c.redisConn.Hset(REDIS_KEY, check.BackendUrl, sig)
-	c.redisConn.Hset(REDIS_KEY, syncKey, 1)
+	c.redisConn.Hset(c.redisKey, check.BackendUrl, sig)
+	c.redisConn.Hset(c.redisKey, syncKey, 1)
 	check.routineSig = sig
 	// Create the channel
 	ch := make(chan int, 1)
@@ -107,12 +116,12 @@ func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 func (c *Cache) IsUnlockedBackend(check *Check) bool {
 	// On top of checking the lock, we compare the lock content to make sure
 	// we still own the lock
-	resp, _ := c.redisConn.Hget(REDIS_KEY, check.BackendUrl).Str()
+	resp, _ := c.redisConn.Hget(c.redisKey, check.BackendUrl).Str()
 	return (resp != check.routineSig)
 }
 
 func (c *Cache) UnlockBackend(check *Check) {
-	c.redisConn.Hdel(REDIS_KEY, check.BackendUrl,
+	c.redisConn.Hdel(c.redisKey, check.BackendUrl,
 		check.BackendUrl+";"+myId)
 	delete(c.backendsMapping, check.BackendUrl)
 	delete(c.channelMapping, check.BackendUrl)
