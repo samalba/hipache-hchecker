@@ -1,0 +1,11 @@
+{
+	"ImportPath": "github.com/morpheu/hipache-hchecker",
+	"GoVersion": "go1.2",
+	"Deps": [
+		{
+			"ImportPath": "github.com/fzzy/radix/redis",
+			"Comment": "v0.3.4",
+			"Rev": "56a3833b5d3c85770aa9b03259ecb28cdf87b837"
+		}
+	]
+}
