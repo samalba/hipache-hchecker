@@ -148,6 +148,8 @@ func parseFlags(cpuProfile *bool) {
 		"Socket read/write timeout (seconds)")
 	flag.StringVar(&redisAddress, "redis", REDIS_ADDRESS,
 		"Network address of Redis")
+	flag.StringVar(&redisPassword, "redis_password", REDIS_PASSWORD,
+		"Password of Redis")
 	flag.BoolVar(cpuProfile, "cpuprofile", false,
 		"Write CPU profile to \"hchecker.prof\" (current directory)")
 	flag.BoolVar(&dryRun, "dryrun", false,
