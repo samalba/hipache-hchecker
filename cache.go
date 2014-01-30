@@ -15,6 +15,7 @@ const (
 
 var (
 	redisAddress string
+	redisPassword string
 )
 
 type Cache struct {
@@ -31,6 +32,7 @@ type Cache struct {
 func NewCache() (*Cache, error) {
 	conf := redis.DefaultConfig()
 	conf.Address = redisAddress
+	conf.Password = redisPassword
 	redisConn := redis.NewClient(conf)
 	cache := &Cache{
 		redisConn:       redisConn,
