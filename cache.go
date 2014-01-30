@@ -11,7 +11,7 @@ import (
 const (
 	REDIS_KEY     = "hchecker"
 	REDIS_ADDRESS = "localhost:6379"
-	REDIS_PASSWORD = nil
+	REDIS_PASSWORD = ""
 )
 
 var (
