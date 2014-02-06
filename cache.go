@@ -8,18 +8,18 @@ import (
 )
 
 const (
-	REDIS_KEY = "hchecker"
-	REDIS_ADDRESS = "localhost:6379"
+	REDIS_KEY      = "hchecker"
+	REDIS_ADDRESS  = "localhost:6379"
 	REDIS_PASSWORD = ""
 )
 
 var (
-	redisAddress string
+	redisAddress  string
 	redisPassword string
 )
 
 type Cache struct {
-	pool	  *redis.Pool
+	pool *redis.Pool
 	// Maintain a mapping between a backends and several frontend
 	// -> map[BACKEND_URL][FRONTEND_NAME] = BACKEND_ID
 	backendsMapping map[string]map[string]int
@@ -30,9 +30,9 @@ type Cache struct {
 
 func NewCache() (*Cache, error) {
 	pool := &redis.Pool{
-		MaxIdle: 3,
+		MaxIdle:     3,
 		IdleTimeout: 240 * time.Second,
-		Dial: func () (redis.Conn, error) {
+		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", redisAddress)
 			if err != nil {
 				return nil, err
@@ -46,12 +46,12 @@ func NewCache() (*Cache, error) {
 			return c, err
 		},
 		TestOnBorrow: func(c redis.Conn, t time.Time) error {
-				_, err := c.Do("PING")
-				return err
+			_, err := c.Do("PING")
+			return err
 		},
 	}
 	cache := &Cache{
-		pool: pool,
+		pool:            pool,
 		backendsMapping: make(map[string]map[string]int),
 		channelMapping:  make(map[string]chan int),
 	}
@@ -61,7 +61,7 @@ func NewCache() (*Cache, error) {
 	// clear the meta-data of everyone...
 	conn := pool.Get()
 	defer conn.Close()
-	conn.Send("DEL",REDIS_KEY)
+	conn.Send("DEL", REDIS_KEY)
 	return cache, nil
 }
 
@@ -117,8 +117,8 @@ func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 	// This one is done in the lock, this will garanty that no routine
 	// will get the same sig
 	sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
-	conn.Send("HSET",REDIS_KEY, check.BackendUrl, sig)
-	conn.Send("HSET",REDIS_KEY, syncKey, 1)
+	conn.Send("HSET", REDIS_KEY, check.BackendUrl, sig)
+	conn.Send("HSET", REDIS_KEY, syncKey, 1)
 	conn.Flush()
 	check.routineSig = sig
 	// Create the channel
@@ -142,7 +142,7 @@ func (c *Cache) IsUnlockedBackend(check *Check) bool {
 func (c *Cache) UnlockBackend(check *Check) {
 	conn := c.pool.Get()
 	defer conn.Close()
-	conn.Send("HDEL",REDIS_KEY, check.BackendUrl, check.BackendUrl+";"+myId)
+	conn.Send("HDEL", REDIS_KEY, check.BackendUrl, check.BackendUrl+";"+myId)
 	conn.Flush()
 	delete(c.backendsMapping, check.BackendUrl)
 	delete(c.channelMapping, check.BackendUrl)
@@ -157,7 +157,7 @@ func (c *Cache) checkBackendMapping(check *Check, frontendKey string,
 	backendId int, mapping *map[string]int) bool {
 	conn := c.pool.Get()
 	defer conn.Close()
-	conn.Send("LINDEX","frontend:"+frontendKey, backendId+1)
+	conn.Send("LINDEX", "frontend:"+frontendKey, backendId+1)
 	conn.Flush()
 	resp, _ := redis.String(conn.Receive())
 	if resp == check.BackendUrl {
