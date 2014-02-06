@@ -247,6 +247,7 @@ func (c *Cache) ListenToChannel(channel string, callback func(line string)) erro
 			case error:
 				conn.Close()
 				conn := c.pool.Get()
+				time.Sleep(10 * time.Second)
 				psc = redis.PubSubConn{conn}
 				psc.Subscribe(channel)
 			}
