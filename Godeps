@@ -1,0 +1,10 @@
+{
+	"ImportPath": "github.com/morpheu/hipache-hchecker",
+	"GoVersion": "go1.2",
+	"Deps": [
+		{
+			"ImportPath": "github.com/garyburd/redigo/redis",
+			"Rev": "ed54f4ed86a815cf09870e4bd1a10a2ee39a4308"
+		}
+	]
+}
