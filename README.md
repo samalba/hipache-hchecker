@@ -32,6 +32,7 @@ on the same machine than Hipache.
       -method="HEAD": HTTP method
       -redis="localhost:6379": Network address of Redis
       -redis_suffix="": Redis suffix to be appended on default hchecker key - required for multiples hchecker instances on same redis server.
+      -redis_password="": Password of Redis
       -uri="/CloudHealthCheck": HTTP URI
 
 4. Run the tests

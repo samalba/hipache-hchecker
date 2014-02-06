@@ -1,27 +1,27 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"github.com/fzzy/radix/redis"
+	"github.com/garyburd/redigo/redis"
 	"log"
 	"time"
 )
 
 const (
-	REDIS_PREFFIX = "hchecker"
-	REDIS_ADDRESS = "localhost:6379"
+	REDIS_PREFFIX  = "hchecker"
+	REDIS_ADDRESS  = "localhost:6379"
+	REDIS_PASSWORD = ""
 )
 
 var (
-	redisAddress string
-	redisSuffix string
+	redisAddress  string
+	redisPassword string
+	redisSuffix   string
 )
 
 type Cache struct {
-	redisConn *redis.Client
-	redisSub  *redis.Subscription
-	redisKey  string
+	pool     *redis.Pool
+	redisKey string
 	// Maintain a mapping between a backends and several frontend
 	// -> map[BACKEND_URL][FRONTEND_NAME] = BACKEND_ID
 	backendsMapping map[string]map[string]int
@@ -31,26 +31,47 @@ type Cache struct {
 }
 
 func NewCache() (*Cache, error) {
-	conf := redis.DefaultConfig()
-	conf.Address = redisAddress
-	redisConn := redis.NewClient(conf)
 	var redisKey string
-	if (redisSuffix != "") {
-		redisKey = REDIS_PREFFIX+"_"+redisSuffix
-	}else{
+	if redisSuffix != "" {
+		redisKey = REDIS_PREFFIX + "_" + redisSuffix
+	} else {
 		redisKey = REDIS_PREFFIX
 	}
+	pool := &redis.Pool{
+		MaxIdle:     3,
+		IdleTimeout: 240 * time.Second,
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", redisAddress)
+			if err != nil {
+				return nil, err
+			}
+			if redisPassword != "" {
+				if _, err := c.Do("AUTH", redisPassword); err != nil {
+					c.Close()
+					return nil, err
+				}
+			}
+			return c, err
+		},
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
+		},
+	}
 	cache := &Cache{
-		redisConn:       redisConn,
+		pool:            pool,
 		redisKey:        redisKey,
 		backendsMapping: make(map[string]map[string]int),
 		channelMapping:  make(map[string]chan int),
 	}
+
 	// We're starting, let's clear any previous meta-data
 	// WARNING: This can be a problem if there are several processes sharing
-	// the same redis on the same machine - without specifying redis_suffix option. 
+	// the same redis on the same machine - without specifying redis_suffix option.
 	// If one of them is restarted, it'll clear the meta-data of everyone...
-	redisConn.Del(cache.redisKey)
+	conn := pool.Get()
+	defer conn.Close()
+	conn.Send("DEL", cache.redisKey)
 	return cache, nil
 }
 
@@ -84,12 +105,15 @@ func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 	syncKey := check.BackendUrl + ";" + myId
 	// Lock the backend with a temporary value, we'll update this with the
 	// goroutine signature later
-	resp := c.redisConn.Transaction(func(mc *redis.MultiCall) {
-		mc.Hsetnx(c.redisKey, check.BackendUrl, 1)
-		mc.Hexists(c.redisKey, syncKey)
-	})
-	locked, _ := resp.Elems[0].Bool()
-	isMine, _ := resp.Elems[1].Bool()
+	var locked bool
+	var isMine bool
+	conn := c.pool.Get()
+	defer conn.Close()
+	conn.Send("MULTI")
+	conn.Send("HSETNX", c.redisKey, check.BackendUrl, 1)
+	conn.Send("HEXISTS", c.redisKey, syncKey)
+	resp, _ := redis.Values(conn.Do("EXEC"))
+	redis.Scan(resp, &locked, &isMine)
 	if locked == false && isMine == false {
 		// The backend is being monitored by someone else
 		return false, nil
@@ -103,8 +127,9 @@ func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 	// This one is done in the lock, this will garanty that no routine
 	// will get the same sig
 	sig := fmt.Sprintf("%s;%d.%d", myId, t.Unix(), t.Nanosecond())
-	c.redisConn.Hset(c.redisKey, check.BackendUrl, sig)
-	c.redisConn.Hset(c.redisKey, syncKey, 1)
+	conn.Send("HSET", c.redisKey, check.BackendUrl, sig)
+	conn.Send("HSET", c.redisKey, syncKey, 1)
+	conn.Flush()
 	check.routineSig = sig
 	// Create the channel
 	ch := make(chan int, 1)
@@ -116,13 +141,19 @@ func (c *Cache) LockBackend(check *Check) (bool, chan int) {
 func (c *Cache) IsUnlockedBackend(check *Check) bool {
 	// On top of checking the lock, we compare the lock content to make sure
 	// we still own the lock
-	resp, _ := c.redisConn.Hget(c.redisKey, check.BackendUrl).Str()
+	conn := c.pool.Get()
+	defer conn.Close()
+	conn.Send("HGET", c.redisKey, check.BackendUrl)
+	conn.Flush()
+	resp, _ := redis.String(conn.Receive())
 	return (resp != check.routineSig)
 }
 
 func (c *Cache) UnlockBackend(check *Check) {
-	c.redisConn.Hdel(c.redisKey, check.BackendUrl,
-		check.BackendUrl+";"+myId)
+	conn := c.pool.Get()
+	defer conn.Close()
+	conn.Send("HDEL", c.redisKey, check.BackendUrl, check.BackendUrl+";"+myId)
+	conn.Flush()
 	delete(c.backendsMapping, check.BackendUrl)
 	delete(c.channelMapping, check.BackendUrl)
 }
@@ -134,7 +165,11 @@ func (c *Cache) UnlockBackend(check *Check) {
  */
 func (c *Cache) checkBackendMapping(check *Check, frontendKey string,
 	backendId int, mapping *map[string]int) bool {
-	resp, _ := c.redisConn.Lindex("frontend:"+frontendKey, backendId+1).Str()
+	conn := c.pool.Get()
+	defer conn.Close()
+	conn.Send("LINDEX", "frontend:"+frontendKey, backendId+1)
+	conn.Flush()
+	resp, _ := redis.String(conn.Receive())
 	if resp == check.BackendUrl {
 		return true
 	}
@@ -148,23 +183,25 @@ func (c *Cache) checkBackendMapping(check *Check, frontendKey string,
  * Returns false if no update has been performed (backend unlock)
  */
 func (c *Cache) MarkBackendDead(check *Check) bool {
+	conn := c.pool.Get()
+	defer conn.Close()
 	m, exists := c.backendsMapping[check.BackendUrl]
 	if !exists {
 		c.UnlockBackend(check)
 		return false
 	}
-	c.redisConn.Transaction(func(mc *redis.MultiCall) {
-		for frontendKey, id := range m {
-			if r := c.checkBackendMapping(check, frontendKey, id, &m); r == false {
-				continue
-			}
-			deadKey := "dead:" + frontendKey
-			mc.Sadd(deadKey, id)
-			// Better way would be to set the same TTL than Hipache. Not
-			// critical since we'll clean the backend list
-			mc.Expire(deadKey, 60)
+	conn.Send("MULTI")
+	for frontendKey, id := range m {
+		if r := c.checkBackendMapping(check, frontendKey, id, &m); r == false {
+			continue
 		}
-	})
+		deadKey := "dead:" + frontendKey
+		conn.Send("SADD", deadKey, id)
+		// Better way would be to set the same TTL than Hipache. Not
+		// critical since we'll clean the backend list
+		conn.Send("EXPIRE", deadKey, 60)
+	}
+	conn.Do("EXEC")
 	if len(m) == 0 {
 		// checkBackenMapping() removed all frontend mapping, no need to check
 		// this backend anymore...
@@ -179,19 +216,21 @@ func (c *Cache) MarkBackendDead(check *Check) bool {
  * Returns false if no update has been performed (backend unlock)
  */
 func (c *Cache) MarkBackendAlive(check *Check) bool {
+	conn := c.pool.Get()
+	defer conn.Close()
 	m, exists := c.backendsMapping[check.BackendUrl]
 	if !exists {
 		c.UnlockBackend(check)
 		return false
 	}
-	c.redisConn.Transaction(func(mc *redis.MultiCall) {
-		for frontendKey, id := range m {
-			if r := c.checkBackendMapping(check, frontendKey, id, &m); r == false {
-				continue
-			}
-			mc.Srem("dead:"+frontendKey, id)
+	conn.Send("MULTI")
+	for frontendKey, id := range m {
+		if r := c.checkBackendMapping(check, frontendKey, id, &m); r == false {
+			continue
 		}
-	})
+		conn.Send("SREM", "dead:"+frontendKey, id)
+	}
+	conn.Do("EXEC")
 	if len(m) == 0 {
 		c.UnlockBackend(check)
 		return false
@@ -204,22 +243,33 @@ func (c *Cache) ListenToChannel(channel string, callback func(line string)) erro
 	// Format received on the channel is:
 	// -> frontend_key;backend_url;backend_id;number_of_backends
 	// Example: "localhost;http://localhost:4242;0;1"
-	msgHandler := func(msg *redis.Message) {
-		switch msg.Type {
-		case redis.MessageMessage:
-			callback(msg.Payload)
+	conn := c.pool.Get()
+
+	psc := redis.PubSubConn{conn}
+	psc.Subscribe(channel)
+
+	go func() {
+		defer conn.Close()
+		for {
+			switch v := psc.Receive().(type) {
+			case redis.Message:
+				callback(string(v.Data[:]))
+			case error:
+				conn.Close()
+				conn := c.pool.Get()
+				time.Sleep(10 * time.Second)
+				psc = redis.PubSubConn{conn}
+				psc.Subscribe(channel)
+			}
 		}
-	}
-	sub, err := c.redisConn.Subscription(msgHandler)
-	if err != nil {
-		return errors.New(fmt.Sprintf("Error: cannot subscribe to "+
-			"the \"dead\" channel: %#v", err))
-	}
-	sub.Subscribe(channel)
-	c.redisSub = sub
+	}()
+
 	return nil
 }
 
 func (c *Cache) PingAlive() {
-	c.redisConn.Set("hchecker_ping", time.Now().Unix())
+	conn := c.pool.Get()
+	defer conn.Close()
+	conn.Send("SET", "hchecker_ping", time.Now().Unix())
+	conn.Flush()
 }
