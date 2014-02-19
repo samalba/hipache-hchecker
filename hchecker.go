@@ -150,9 +150,9 @@ func parseFlags(cpuProfile *bool) {
 		"Network address of Redis")
 	flag.StringVar(&redisPassword, "redis_password", REDIS_PASSWORD,
 		"Password of Redis")
-	flag.StringVar(&redisIdleTimeout, "redis_idle_timeout", REDIS_IDLE_TIMEOUT,
+	flag.IntVar(&redisIdleTimeout, "redis_idle_timeout", REDIS_IDLE_TIMEOUT,
 		"Close redis connections after remaining idle for this duration (0 = no connection close)")
-	flag.StringVar(&redisMaxIdle, "redis_max_idle", REDIS_MAX_IDLE,
+	flag.IntVar(&redisMaxIdle, "redis_max_idle", REDIS_MAX_IDLE,
 		"Maximum number of idle redis connections in the pool")
 	flag.BoolVar(cpuProfile, "cpuprofile", false,
 		"Write CPU profile to \"hchecker.prof\" (current directory)")

@@ -8,16 +8,18 @@ import (
 )
 
 const (
-	REDIS_KEY      = "hchecker"
-	REDIS_ADDRESS  = "localhost:6379"
-	REDIS_PASSWORD = ""
+	REDIS_KEY          = "hchecker"
+	REDIS_ADDRESS      = "localhost:6379"
+	REDIS_PASSWORD     = ""
 	REDIS_IDLE_TIMEOUT = 120
-	REDIS_MAX_IDLE = 3
+	REDIS_MAX_IDLE     = 3
 )
 
 var (
-	redisAddress  string
-	redisPassword string
+	redisAddress     string
+	redisPassword    string
+	redisMaxIdle     int
+	redisIdleTimeout int
 )
 
 type Cache struct {
@@ -33,7 +35,7 @@ type Cache struct {
 func NewCache() (*Cache, error) {
 	pool := &redis.Pool{
 		MaxIdle:     redisMaxIdle,
-		IdleTimeout: redisIdleTimeout * time.Second,
+		IdleTimeout: time.Duration(redisIdleTimeout) * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", redisAddress)
 			if err != nil {
