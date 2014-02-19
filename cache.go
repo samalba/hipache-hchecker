@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	REDIS_PREFFIX  = "hchecker"
-	REDIS_ADDRESS  = "localhost:6379"
-	REDIS_PASSWORD = ""
+	REDIS_PREFFIX      = "hchecker"
+	REDIS_ADDRESS      = "localhost:6379"
+	REDIS_PASSWORD     = ""
 	REDIS_IDLE_TIMEOUT = 120
-	REDIS_MAX_IDLE = 3
+	REDIS_MAX_IDLE     = 3
 )
 
 var (
