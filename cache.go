@@ -11,6 +11,8 @@ const (
 	REDIS_PREFFIX  = "hchecker"
 	REDIS_ADDRESS  = "localhost:6379"
 	REDIS_PASSWORD = ""
+	REDIS_IDLE_TIMEOUT = 120
+	REDIS_MAX_IDLE = 3
 )
 
 var (
@@ -38,8 +40,8 @@ func NewCache() (*Cache, error) {
 		redisKey = REDIS_PREFFIX
 	}
 	pool := &redis.Pool{
-		MaxIdle:     3,
-		IdleTimeout: 240 * time.Second,
+		MaxIdle:     redisMaxIdle,
+		IdleTimeout: redisIdleTimeout * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", redisAddress)
 			if err != nil {
