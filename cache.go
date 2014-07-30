@@ -41,42 +41,42 @@ func NewCache() (*Cache, error) {
 	} else {
 		redisKey = REDIS_PREFFIX
 	}
-	pool := &redis.Pool{
+	cache := &Cache{
+		redisKey:        redisKey,
+		backendsMapping: make(map[string]map[string]int),
+		channelMapping:  make(map[string]chan int),
+	}
+	cache.pool = &redis.Pool{
 		MaxIdle:     redisMaxIdle,
 		IdleTimeout: time.Duration(redisIdleTimeout) * time.Second,
-		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", redisAddress)
-			if err != nil {
-				return nil, err
-			}
-			if redisPassword != "" {
-				if _, err := c.Do("AUTH", redisPassword); err != nil {
-					c.Close()
-					return nil, err
-				}
-			}
-			return c, err
-		},
+		Dial:        cache.getConn,
 		TestOnBorrow: func(c redis.Conn, t time.Time) error {
 			_, err := c.Do("PING")
 			return err
 		},
 	}
-	cache := &Cache{
-		pool:            pool,
-		redisKey:        redisKey,
-		backendsMapping: make(map[string]map[string]int),
-		channelMapping:  make(map[string]chan int),
-	}
-
 	// We're starting, let's clear any previous meta-data
 	// WARNING: This can be a problem if there are several processes sharing
 	// the same redis on the same machine - without specifying redis_suffix option.
 	// If one of them is restarted, it'll clear the meta-data of everyone...
-	conn := pool.Get()
+	conn := cache.pool.Get()
 	defer conn.Close()
 	conn.Send("DEL", cache.redisKey)
 	return cache, nil
+}
+
+func (c *Cache) getConn() (redis.Conn, error) {
+	conn, err := redis.Dial("tcp", redisAddress)
+	if err != nil {
+		return nil, err
+	}
+	if redisPassword != "" {
+		if _, err := conn.Do("AUTH", redisPassword); err != nil {
+			conn.Close()
+			return nil, err
+		}
+	}
+	return conn, err
 }
 
 /*
@@ -247,28 +247,34 @@ func (c *Cache) ListenToChannel(channel string, callback func(line string)) erro
 	// Format received on the channel is:
 	// -> frontend_key;backend_url;backend_id;number_of_backends
 	// Example: "localhost;http://localhost:4242;0;1"
-	conn := c.pool.Get()
-
-	psc := redis.PubSubConn{conn}
-	psc.Subscribe(channel)
-
 	go func() {
-		defer conn.Close()
 		for {
-			switch v := psc.Receive().(type) {
-			case redis.Message:
-				callback(string(v.Data[:]))
-			case error:
-				conn.Close()
-				conn := c.pool.Get()
-				time.Sleep(10 * time.Second)
-				psc = redis.PubSubConn{conn}
-				psc.Subscribe(channel)
+			err := c.connectAndListen(channel, callback)
+			if err != nil {
+				log.Printf("Error subscribing channel %q: %s. Reconnecting...", channel, err.Error())
 			}
+			time.Sleep(5 * time.Second)
 		}
 	}()
-
 	return nil
+}
+
+func (c *Cache) connectAndListen(channel string, callback func(line string)) error {
+	conn, err := c.getConn()
+	if err != nil {
+		return err
+	}
+	psc := redis.PubSubConn{conn}
+	defer psc.Close()
+	psc.Subscribe(channel)
+	for {
+		switch v := psc.Receive().(type) {
+		case redis.Message:
+			callback(string(v.Data[:]))
+		case error:
+			return v
+		}
+	}
 }
 
 func (c *Cache) PingAlive() {
