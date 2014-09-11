@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/morpheu/hipache-hchecker",
+	"ImportPath": "github.com/samalba/hipache-hchecker",
 	"GoVersion": "go1.2",
 	"Deps": [
 		{
